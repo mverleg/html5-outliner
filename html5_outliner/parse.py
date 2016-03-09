@@ -18,6 +18,9 @@ class SectionNode:
 		self.elem = elem
 		# self.children = children
 
+	def __repr__(self):
+		return '{0:} ({1:})'.format(self.name, self.type)
+
 	def str(self, level=-1):
 		txt = ''
 		if self.type not in hidden_section_tags:
@@ -53,12 +56,9 @@ def readygo(soup):
 			queue.extend(elem.children)
 	active = []
 	is_first = False
-	print(tuple(e.name for e in elems_BF if e.name is not None))
+	# print(tuple(e.name for e in elems_BF if e.name is not None))
 	""" Iterate over the breadth-first elements, resistant to changes. """
 	for elem in elems_BF:
-		if getattr(elem, '_move_me', False):
-			elem.extract()
-			active[-1].elem.append(elem)
 		name = elem.name
 		if name in heading_tags:
 			lvl = int(elem.name[-1])
@@ -72,21 +72,24 @@ def readygo(soup):
 					""" Shallower or equal nesting: close the current section. """
 					print('going up for', elem.name, lvl, len(active), up_step)
 					active.pop()
+				if getattr(elem, '_move_me', False) and active:
+					active[-1].elem.append(elem)
 				""" Start a new section. """
-				print('creating section for', elem.name, lvl, len(active))
-				section_tag = BeautifulSoup.new_tag(elem, 'section', **{'class': 'implicit-section'})
-				elem.replace_with(section_tag)
-				section_tag.append(elem)
+				print('creating section for', elem.text, lvl, len(active))
+				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
+					**{'class': 'implicit-section', 'section-depth': len(active) + 1}))
 				node = SectionNode(name=elem.text.strip(), type='implicit', elem=section_tag)
 				active.append(node)
+				print('\n\n\n' + str(active) + '\n' + str(soup.prettify()) + '\n\n\n')
 				for sib in tuple(section_tag.next_siblings):
-					if sib.name:
-						sib.attrs['class'] = 'move-me'
+					# if sib.name:
+					# 	sib.attrs['class'] = 'move-me'
 					setattr(sib, '_move_me', True)
 			elem.name = 'h{0:d}'.format(len(active))
 		elif name in section_tags:
 			is_first = True
-
+		if getattr(elem, '_move_me', False):
+			active[-1].elem.append(elem)
 
 
 def find_sections(sub_soup, level=0):
@@ -116,7 +119,7 @@ def find_sections(sub_soup, level=0):
 					print('implicit & lower: ', elem, sub_level, section_level, tuple(q.name for q in elem.next_siblings))
 					section_tag = BeautifulSoup.new_tag(sub_soup, implicit_section, **{'class': 'implicit-section'})
 					for move_me in tuple(elem.next_siblings):
-						move_me.extract()
+						# move_me.extract()
 						section_tag.append(move_me)
 					elem.replace_with(section_tag)
 					section_tag.insert(0, elem)
