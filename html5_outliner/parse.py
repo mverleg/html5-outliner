@@ -1,7 +1,9 @@
+from itertools import chain
 
 from collections import deque
 from bs4 import BeautifulSoup
-
+from random import randint
+from re import sub
 
 implicit_section = 'section'
 section_tags = {'section', 'article', 'aside', 'nav'}
@@ -60,131 +62,74 @@ def readygo(soup):
 		elem = queue.popleft()
 		elems_BF.append(elem)
 		if elem.name not in skip_tags:
-			queue.extend(elem.children)
+			queue.extendleft(reversed(tuple(elem.children)))
 	active = [SectionNode(name=None, type='root', elem=None)]
 	is_first = False
-	# print(tuple(e.name for e in elems_BF if e.name is not None))
+	print(tuple(e.name for e in elems_BF if e.name is not None))
 	""" Iterate over the breadth-first elements, resistant to changes. """
 	for elem in elems_BF:
 		name = elem.name
 		if name in heading_tags:
 			name_lvl, max_lvl = int(elem.name[-1]), len(active)
 			lvl = min(name_lvl, max_lvl)
-			# if active[-1].offset is not None:
-			# 	print('  >>shifting by offset', active[-1].offset)
-			# 	lvl += active[-1].offset
 			caption = elem.text.strip()
 			print('found caption', elem.name, ':', elem.text, lvl, len(active))
 			if is_first:
 				print('  first title')
 				active[-1].name = caption
 				active[-1].hlvl = name_lvl
-				# if active[-1].is_explicit():
-				# 	print('  >>setting offset')
-				# 	active[-1].offset = active[-1].hlvl - name_lvl
-				# 	lvl = active[-1].hlvl
-				# active[-1].hlvl = name_lvl
 				is_first = False
 			else:
 				""" Found a heading that doesn't belong to an explicit section; start one. """
 				# print('   {0:d} ?<= {1:d} [depth={2:d}]'.format(name_lvl, active[-1].hlvl, len(active)))
 				print('  active', active)
+				gone_sects = []
 				while name_lvl <= active[-1].hlvl:
 					""" Shallower or equal nesting: close the current section. """
 					print(' going up for', elem.name, name_lvl, active[-1].hlvl)
-					active.pop()
+					gone_sects.append(active.pop())
 				if getattr(elem, '_move_me', False) and len(active) > 1:
 					active[-1].elem.append(elem)
 				""" Start a new section. """
-				print('  active', active)
 				print(' creating section for', elem.text, lvl, len(active))
 				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
-					**{'class': 'implicit-section', 'section-depth': len(active)}))
+					**{'class': 'implicit-section', 'section-depth': len(active)}))  # todo: id
 				node = active[-1].child(name=caption, type='implicit', elem=section_tag, hlvl=name_lvl)
+				for gone_sect in gone_sects:
+					for tag in section_tag.parents:
+						if tag.parent == gone_sect.elem:
+							gone_sect.elem.insert_after(tag)
+							print('moving', tag, 'due to nesting')
 				active.append(node)
-				for sib in tuple(section_tag.next_siblings):
+				for sib in section_tag.next_siblings:
 					setattr(sib, '_move_me', True)
 			elem.name = 'h{0:d}'.format(lvl)
 		if getattr(elem, '_move_me', False):
 			active[-1].elem.append(elem)
 		if name in section_tags:
-			print('\n\n\n', soup.prettify())
 			parent_lvl = active[-1].hlvl
+			print('found explicit section (setting lvl {0:d})'.format(parent_lvl))
+			# print('\n\n\n', soup.prettify())
 			active.pop()
 			elem.attrs['section-depth'] = len(active)
+			# elem.attrs['id'] = randint(0, 1000000)  #todo id
 			node = active[-1].child(name=None, type=name, elem=elem, hlvl=parent_lvl)
 			active.append(node)
 			is_first = True
-			# for sib in tuple(elem.next_siblings):
-			# setattr(elem, '_move_me', False)
 	return active[0]
 
 
-def find_sections(sub_soup, level=0):
-	sub_sections = []
-	name, is_first_heading, section_level = None, True, level
-	""" Look for sections breadth-first non-recursively. """
-	queue = deque(child for child in sub_soup.children if child.name)
-	while queue:
-		# print('Q: ', tuple(q.name for q in queue))
-		elem = queue.popleft()
-		if elem.name in heading_tags:
-			if is_first_heading:
-				""" Found the name of this level. """
-				name = elem.text.strip()
-				is_first_heading = False
-				print('first: ', elem, section_level)
-				section_level = int(elem.name[-1])
-			else:
-				""" Found a header without explicit section... """
-				sub_level = int(elem.name[-1])
-				if sub_level <= section_level:
-					""" The header is closer to root; close the current section. """
-					print('implicit & higher: ', elem, sub_level, section_level)
-					#todo: should this close all sections of lower rank?
-				else:
-					""" The header is lower rank; add a subsection. """
-					print('implicit & lower: ', elem, sub_level, section_level, tuple(q.name for q in elem.next_siblings))
-					section_tag = BeautifulSoup.new_tag(sub_soup, implicit_section, **{'class': 'implicit-section'})
-					for move_me in tuple(elem.next_siblings):
-						# move_me.extract()
-						section_tag.append(move_me)
-					elem.replace_with(section_tag)
-					section_tag.insert(0, elem)
-					# print(tuple(c.name for c in section_tag.children))
-					sub_level = int(elem.name[-1])
-					sub_sections.append(find_sections(elem, level=sub_level))
-					# print(soup.prettify())
-					# section_tag.prepend(elem)
-		elif elem.name in section_tags:
-			# print(elem.name, 'is section')
-			""" Found a section, add it ot outline and recurse. """
-			# header = elem.find(heading_tags)
-			# header_level = int(header.name[-1])
-			# if header is not None:
-				# name = header.text.strip()
-			# sub_section = find_sections(elem, level=section_level)
-			sub_sections.append(find_sections(elem, level=section_level))
-			# outline_head.append([name, sub_outline])
-		elif elem.name not in skip_tags:
-			# print(elem.name, 'is not a section, adding', tuple(elem.children))
-			queue.extend(elem.children)
-			# print('extended Q: ', tuple(q.name for q in queue))
-		# else:
-		# 	print(elem.name, 'skipped')
-	# if name is None:
-	# 	print('name None for', sub_soup)
-	return SectionNode(name=name, type=sub_soup.name, children=sub_sections)
-
-
-with open('tests/annoying01.html', 'r') as fh:
+with open('../tests/annoying02.html', 'r') as fh:
 	html = fh.read()
 
+
+def tmp_show(soup):
+	print(sub(r'(<(?:h\d|p)>)\s*(.*?)\s*(</(?:h\d|p)>)', r'\1\2\3', sub(r'\n(\s+)', r'\n\1\1\1', soup.body.prettify())))
 
 soup = BeautifulSoup(html, 'lxml')
 
 toc = readygo(soup)
-print(soup.body.prettify())
+tmp_show(soup)
 print('** ToC **')
 print(toc.str())
 
