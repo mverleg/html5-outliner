@@ -16,10 +16,22 @@ class SectionNode:
 		self.name = name
 		self.type = type
 		self.elem = elem
-		# self.children = children
+		self.children = []
+
+	def child(self, name, type, elem):
+		child = SectionNode(name=name, type=type, elem=elem)
+		self.children.append(child)
+		return child
 
 	def __repr__(self):
 		return '{0:} ({1:})'.format(self.name, self.type)
+
+	# def elem_lvl(self):
+	# 	todo: tmp
+		# if not self.elem:
+		# 	return 10
+		# return int(self.elem.find(heading_tags).name[-1])
+		# return int(self.elem.name[-1])
 
 	def str(self, level=-1):
 		txt = ''
@@ -54,42 +66,57 @@ def readygo(soup):
 		elems_BF.append(elem)
 		if elem.name not in skip_tags:
 			queue.extend(elem.children)
-	active = []
+	active = [SectionNode(name=None, type='root', elem=None)]
+	# active_lvl = 1
+	# shift_min, shift_offset = 1, 0
 	is_first = False
 	# print(tuple(e.name for e in elems_BF if e.name is not None))
 	""" Iterate over the breadth-first elements, resistant to changes. """
 	for elem in elems_BF:
 		name = elem.name
 		if name in heading_tags:
-			lvl = int(elem.name[-1])
+			# print('offset =', offset, 'for', elem.text)
+			# lvl = int(elem.name[-1])
+			lvl = min(int(elem.name[-1]), len(active) + 1)
 			if is_first:
-				active[-1] = elem.text.strip()
-				print('found caption', elem.name, ':', elem.text, lvl, len(active))
+				# active[-1] = elem.text.strip()
 				is_first = False
 			else:
+				# print('>>', lvl, active[-1].elem_lvl())
+				# if lvl > active[-1].elem_lvl() + 1:
+					# print('UPDATING HEADER')
+					# shift_min, shift_min =
+				print('found caption', elem.name, ':', elem.text, lvl, len(active))
 				""" Found a heading that doesn't belong to an explicit section; start one. """
-				for up_step in range(0, len(active) - lvl + 1):
+				for up_step in range(0, len(active) - lvl):
 					""" Shallower or equal nesting: close the current section. """
 					print('going up for', elem.name, lvl, len(active), up_step)
 					active.pop()
-				if getattr(elem, '_move_me', False) and active:
+				if getattr(elem, '_move_me', False) and len(active) > 1:
 					active[-1].elem.append(elem)
 				""" Start a new section. """
 				print('creating section for', elem.text, lvl, len(active))
 				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
-					**{'class': 'implicit-section', 'section-depth': len(active) + 1}))
-				node = SectionNode(name=elem.text.strip(), type='implicit', elem=section_tag)
+					**{'class': 'implicit-section', 'section-depth': len(active)}))
+				# node = SectionNode(name=elem.text.strip(), type='implicit', elem=section_tag)
+				node = active[-1].child(name=elem.text.strip(), type='implicit', elem=section_tag)
 				active.append(node)
-				print('\n\n\n' + str(active) + '\n' + str(soup.prettify()) + '\n\n\n')
+				# print('\n\n\n' + str(active) + '\n' + str(soup.prettify()) + '\n\n\n')
 				for sib in tuple(section_tag.next_siblings):
 					# if sib.name:
 					# 	sib.attrs['class'] = 'move-me'
 					setattr(sib, '_move_me', True)
-			elem.name = 'h{0:d}'.format(len(active))
+			elem.name = 'h{0:d}'.format(lvl)
+			# if lvl + 1 >= len(active):
+			# 	offset = lvl + 1 - len(active)
+			# 	elem.name = 'h{0:d}'.format(len(active) - 1)
+			# else:
+			# 	offset = 0
 		elif name in section_tags:
 			is_first = True
 		if getattr(elem, '_move_me', False):
 			active[-1].elem.append(elem)
+
 
 
 def find_sections(sub_soup, level=0):
