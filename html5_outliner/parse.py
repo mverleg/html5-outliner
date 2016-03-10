@@ -26,13 +26,14 @@ class SectionNode:
 		self.children.append(child)
 		return child
 
-	def depth(self):  # cache
-		node = self
-		count = 0
-		while node is not None:
-			node = node.parent
-			count += 1
-		return count
+	def depth(self):
+		if not hasattr(self, '_depth'):
+			node = self
+			self._depth = 0
+			while node is not None:
+				node = node.parent
+				self._depth += 1
+		return self._depth
 
 	def __repr__(self):
 		return '{0:} d{2:} ({1:})'.format(self.name, self.type, self.hlvl)
@@ -137,32 +138,37 @@ def do(soup):
 
 def rec(elem, section):
 	if elem.name in skip_tags or 'hidden' in elem.attrs:
-		return section
-	print('>>', elem.name)
-	if section.type == 'implicit':
-		print('## moving', elem.name)
-		section.elem.append(elem)
-	else:
-		print('## NOT moving', elem.name, ', type =', section.type)
+		return
 	if elem.name in section_tags:
-		section = section.child(name=None, type=elem.name, elem=elem, hlvl=None)  # remove args
+		new_section = section.child(name=None, type=elem.name, elem=elem, hlvl=section.hlvl + 1)  # remove args
+		for child in elem.children:
+			rec(child, new_section)
 		elem.attrs['section-depth'] = section.depth() - 1
-	if elem.name in heading_tags:
+	elif elem.name in heading_tags:
 		caption = elem.text.strip()
+		hlvl = int(elem.name[-1])
 		if section.name is None:
 			section.name = caption
-			print('header', section.name, 'should be lvl', section.depth())
+			section.hlvl = hlvl
 		else:
+			print('>> HLVL', section, section.hlvl, hlvl)
+			while section.hlvl >= hlvl:
+				section = section.parent
 			section_elem = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
 				**{'class': 'implicit-section', 'section-depth': section.depth()}))
-			section = section.child(name=caption, type='implicit', elem=section_elem, hlvl=None)
+			for sib in tuple(section_elem.next_siblings):
+				section_elem.append(sib)
+			new_section = section.child(name=None, type='implicit', elem=section_elem, hlvl=hlvl)
+			for child in section_elem.children:
+				rec(child, new_section)
+			print('section is now', section)
 		elem.name = 'h{0:d}'.format(section.depth() - 1)
-	for child in tuple(elem.children):
-		section = rec(child, section)
-	return section
+	else:
+		for child in elem.children:
+			rec(child, section)
 
 
-with open('../tests/demo02.html', 'r') as fh:
+with open('../tests/implicit02.html', 'r') as fh:
 	html = fh.read()
 
 
