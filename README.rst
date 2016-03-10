@@ -16,7 +16,7 @@ This implementation does not quite conform to `the standard at w3.org`_ if secti
 
 This is done because the behaviour seems more sensible to me in some cases, especially when making implicit sections explicit.
 
-For example:
+For example::
 
 	<h1>One</h1>
 	<section>
@@ -26,13 +26,13 @@ For example:
 		</section>
 	</section>
 
-gives the outline:
+gives the outline::
 
 	1. One
 		1.1. Two
 			1.1.1. Three
 
-I feel that the most logical behaviour would be if the below implies the same sections and outline:
+I feel that the most logical behaviour would be if the below implies the same sections and outline::
 
 	<h1>One</h1>
 	<h2>Two</h2>
@@ -40,13 +40,13 @@ I feel that the most logical behaviour would be if the below implies the same se
 		<h1>Three</h1>
 	</section>
 
-but instead it results in:
+but instead it results in::
 
 	1. One
 		1.1. Two
 		1.2. Three
 
-Interestingly, section "Three" here does not create a deeper nesting (for any header rank), whereas this example:
+Interestingly, section "Three" here does not create a deeper nesting (for any header rank), whereas this example::
 
 	<h1>One</h1>
 	<h1>Two</h1>
@@ -54,7 +54,7 @@ Interestingly, section "Three" here does not create a deeper nesting (for any he
 		<h1>Three</h1>
 	</section>
 
-...does create a nesting level for section "Three":
+...does create a nesting level for section "Three"::
 
 	1. One
 	2. Two
