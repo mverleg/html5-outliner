@@ -1,8 +1,6 @@
-from itertools import chain
 
 from collections import deque
 from bs4 import BeautifulSoup
-from random import randint
 from re import sub
 
 implicit_section = 'section'
@@ -53,7 +51,10 @@ find shallower header: close current AND PARENT(S), pop as appropriate, then add
 #todo: add id's to all elements, possibly section numbers (section-2-3-3-1)
 
 
-def readygo(soup):
+def readygo(soup, verbose=True):
+	def log(txt):
+		if verbose:
+			print(txt)
 	"""."""
 	""" Build the whole breadth-first sequence beforehand. """
 	elems_BF = []
@@ -70,28 +71,28 @@ def readygo(soup):
 	for elem in elems_BF:
 		name = elem.name
 		if name in heading_tags:
-			name_lvl, max_lvl = int(elem.name[-1]), len(active)
-			lvl = min(name_lvl, max_lvl)
+			name_lvl = int(elem.name[-1])
 			caption = elem.text.strip()
-			print('found caption', elem.name, ':', elem.text, lvl, len(active))
 			if is_first:
-				print('  first title')
+				log('{0:} "{1:}" found: first in section'.format(name, caption))
 				active[-1].name = caption
-				active[-1].hlvl = name_lvl
+				lvl = active[-1].hlvl
 				is_first = False
 			else:
 				""" Found a heading that doesn't belong to an explicit section; start one. """
-				# print('   {0:d} ?<= {1:d} [depth={2:d}]'.format(name_lvl, active[-1].hlvl, len(active)))
-				print('  active', active)
+				log('{0:} "{1:}" found: start implicit section'.format(name, caption))
+				lvl = min(name_lvl, len(active))
 				gone_sects = []
 				while name_lvl <= active[-1].hlvl:
 					""" Shallower or equal nesting: close the current section. """
-					print(' going up for', elem.name, name_lvl, active[-1].hlvl)
+					log(' {0:} "{1:}" is less deep than active ({2:}<={3:}); closing'
+						.format(name, caption, name_lvl, active[-1].hlvl))
 					gone_sects.append(active.pop())
-				if getattr(elem, '_move_me', False) and len(active) > 1:
+				if getattr(elem, '_move_me', False) and len(active) > 1:# and active[-1].type == 'implicit':
 					active[-1].elem.append(elem)
 				""" Start a new section. """
-				print(' creating section for', elem.text, lvl, len(active))
+				print(' {0:} "{1:}" CHECK {2:}<={3:}; active: {4:}'.format(name, caption, name_lvl, active[-1].hlvl, active[-1]))
+				print('active', active)
 				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
 					**{'class': 'implicit-section', 'section-depth': len(active)}))  # todo: id
 				node = active[-1].child(name=caption, type='implicit', elem=section_tag, hlvl=name_lvl)
@@ -99,27 +100,128 @@ def readygo(soup):
 					for tag in section_tag.parents:
 						if tag.parent == gone_sect.elem:
 							gone_sect.elem.insert_after(tag)
-							print('moving', tag, 'due to nesting')
+							log(' {0:} "{1:}": moving {2:} due to nesting'.format(name, caption, tag.name))
 				active.append(node)
 				for sib in section_tag.next_siblings:
 					setattr(sib, '_move_me', True)
-			elem.name = 'h{0:d}'.format(lvl)
+			if name_lvl != lvl:
+				log(' {0:} "{1:}" level update to h{2:}'.format(name, caption, lvl))
+				elem.name = 'h{0:d}'.format(lvl)
 		if getattr(elem, '_move_me', False):
 			active[-1].elem.append(elem)
 		if name in section_tags:
-			parent_lvl = active[-1].hlvl
-			print('found explicit section (setting lvl {0:d})'.format(parent_lvl))
-			# print('\n\n\n', soup.prettify())
-			active.pop()
+			log('{0:} found; adding nameless node'.format(name))
+			parent_lvl = active[-1].hlvl + 1
 			elem.attrs['section-depth'] = len(active)
 			# elem.attrs['id'] = randint(0, 1000000)  #todo id
 			node = active[-1].child(name=None, type=name, elem=elem, hlvl=parent_lvl)
+			active.pop()
 			active.append(node)
 			is_first = True
+			tmp_show(soup)
+	print(active)
 	return active[0]
 
 
-with open('../tests/annoying02.html', 'r') as fh:
+def log(txt):
+	print(txt)
+
+
+def do(soup):
+	section = SectionNode(name=None, type='root', elem=None)
+	rec(soup.body, section)
+	return section
+
+
+def rec(elem, section):
+	if elem.name in skip_tags or 'hidden' in elem.attrs:
+		return
+	print('>>', elem.name)
+	if elem.name in section_tags:
+		section = section.child(name=None, type=elem.name, elem=None, hlvl=None)  # remove args
+	elif elem.name in heading_tags:
+		if section.name is None:
+			section.name = elem.text.strip()
+		else:
+			print('section name already set to', section.name, 'when analyzing', elem.text)
+			exit(42)
+	for child in elem.children:
+		rec(child, section)
+	# for child in elem.children:
+	# 	rec(child, stack=stack)
+	# if stack[-1] == elem:
+	# 	stack.pop()
+	return
+	"""."""
+	""" Build the whole breadth-first sequence beforehand. """
+	elems_BF = []
+	queue = deque(child for child in soup.children if child.name)
+	while queue:
+		elem = queue.popleft()
+		elems_BF.append(elem)
+		if elem.name not in skip_tags:
+			queue.extendleft(reversed(tuple(elem.children)))
+	active = [SectionNode(name=None, type='root', elem=None)]
+	is_first = False
+	print(tuple(e.name for e in elems_BF if e.name is not None))
+	""" Iterate over the breadth-first elements, resistant to changes. """
+	for elem in elems_BF:
+		name = elem.name
+		if name in heading_tags:
+			name_lvl = int(elem.name[-1])
+			caption = elem.text.strip()
+			if is_first:
+				log('{0:} "{1:}" found: first in section'.format(name, caption))
+				active[-1].name = caption
+				lvl = active[-1].hlvl
+				is_first = False
+			else:
+				""" Found a heading that doesn't belong to an explicit section; start one. """
+				log('{0:} "{1:}" found: start implicit section'.format(name, caption))
+				lvl = min(name_lvl, len(active))
+				gone_sects = []
+				while name_lvl <= active[-1].hlvl:
+					""" Shallower or equal nesting: close the current section. """
+					log(' {0:} "{1:}" is less deep than active ({2:}<={3:}); closing'
+						.format(name, caption, name_lvl, active[-1].hlvl))
+					gone_sects.append(active.pop())
+				if getattr(elem, '_move_me', False) and len(active) > 1:# and active[-1].type == 'implicit':
+					active[-1].elem.append(elem)
+				""" Start a new section. """
+				print(' {0:} "{1:}" CHECK {2:}<={3:}; active: {4:}'.format(name, caption, name_lvl, active[-1].hlvl, active[-1]))
+				print('active', active)
+				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
+					**{'class': 'implicit-section', 'section-depth': len(active)}))  # todo: id
+				node = active[-1].child(name=caption, type='implicit', elem=section_tag, hlvl=name_lvl)
+				for gone_sect in gone_sects:
+					for tag in section_tag.parents:
+						if tag.parent == gone_sect.elem:
+							gone_sect.elem.insert_after(tag)
+							log(' {0:} "{1:}": moving {2:} due to nesting'.format(name, caption, tag.name))
+				active.append(node)
+				for sib in section_tag.next_siblings:
+					setattr(sib, '_move_me', True)
+			if name_lvl != lvl:
+				log(' {0:} "{1:}" level update to h{2:}'.format(name, caption, lvl))
+				elem.name = 'h{0:d}'.format(lvl)
+		if getattr(elem, '_move_me', False):
+			active[-1].elem.append(elem)
+		if name in section_tags:
+			log('{0:} found; adding nameless node'.format(name))
+			parent_lvl = active[-1].hlvl + 1
+			elem.attrs['section-depth'] = len(active)
+			# elem.attrs['id'] = randint(0, 1000000)  #todo id
+			node = active[-1].child(name=None, type=name, elem=elem, hlvl=parent_lvl)
+			active.pop()
+			active.append(node)
+			is_first = True
+			tmp_show(soup)
+	print(active)
+	return active[0]
+
+
+
+with open('../tests/explicit01.html', 'r') as fh:
 	html = fh.read()
 
 
@@ -127,9 +229,9 @@ def tmp_show(soup):
 	print(sub(r'(<(?:h\d|p)>)\s*(.*?)\s*(</(?:h\d|p)>)', r'\1\2\3', sub(r'\n(\s+)', r'\n\1\1\1', soup.body.prettify())))
 
 soup = BeautifulSoup(html, 'lxml')
-
-toc = readygo(soup)
 tmp_show(soup)
+toc = do(soup)
+# tmp_show(soup)
 print('** ToC **')
 print(toc.str())
 
