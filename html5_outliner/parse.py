@@ -151,7 +151,6 @@ def rec(elem, section):
 			section.name = caption
 			section.hlvl = hlvl
 		else:
-			print('>> HLVL', section, section.hlvl, hlvl)
 			while section.hlvl >= hlvl:
 				section = section.parent
 			section_elem = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
