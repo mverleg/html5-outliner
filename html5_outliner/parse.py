@@ -18,6 +18,7 @@ class SectionNode:
 		self.elem = elem
 		self.children = []
 		self.hlvl = hlvl
+		# self.offset = None  # only for explicit
 
 	def child(self, name, type, elem, hlvl):
 		child = SectionNode(name=name, type=type, elem=elem, hlvl=hlvl)
@@ -25,16 +26,19 @@ class SectionNode:
 		return child
 
 	def __repr__(self):
-		return '{0:} ({1:})'.format(self.name, self.type)
+		return '{0:} d{2:d} ({1:})'.format(self.name, self.type, self.hlvl)
 
 	def str(self, level=-1):
 		txt = ''
 		if self.type not in hidden_section_tags:
 			if level >= 0:
-				txt = '{0:s} {1:s}\n'.format('  '*level, self.name or '??')
+				txt = '{0:s}{1:s}\n'.format('  '*level, self.name or '??')
 			for child in self.children:
 				txt += child.str(level=level + 1)
 		return txt
+
+	def is_explicit(self):  #todo
+		return self.type != 'implicit'
 
 
 """
@@ -66,12 +70,25 @@ def readygo(soup):
 		if name in heading_tags:
 			name_lvl, max_lvl = int(elem.name[-1]), len(active)
 			lvl = min(name_lvl, max_lvl)
+			# if active[-1].offset is not None:
+			# 	print('  >>shifting by offset', active[-1].offset)
+			# 	lvl += active[-1].offset
+			caption = elem.text.strip()
 			print('found caption', elem.name, ':', elem.text, lvl, len(active))
 			if is_first:
+				print('  first title')
+				active[-1].name = caption
+				active[-1].hlvl = name_lvl
+				# if active[-1].is_explicit():
+				# 	print('  >>setting offset')
+				# 	active[-1].offset = active[-1].hlvl - name_lvl
+				# 	lvl = active[-1].hlvl
+				# active[-1].hlvl = name_lvl
 				is_first = False
 			else:
 				""" Found a heading that doesn't belong to an explicit section; start one. """
 				# print('   {0:d} ?<= {1:d} [depth={2:d}]'.format(name_lvl, active[-1].hlvl, len(active)))
+				print('  active', active)
 				while name_lvl <= active[-1].hlvl:
 					""" Shallower or equal nesting: close the current section. """
 					print(' going up for', elem.name, name_lvl, active[-1].hlvl)
@@ -79,18 +96,27 @@ def readygo(soup):
 				if getattr(elem, '_move_me', False) and len(active) > 1:
 					active[-1].elem.append(elem)
 				""" Start a new section. """
+				print('  active', active)
 				print(' creating section for', elem.text, lvl, len(active))
 				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
 					**{'class': 'implicit-section', 'section-depth': len(active)}))
-				node = active[-1].child(name=elem.text.strip(), type='implicit', elem=section_tag, hlvl=name_lvl)
+				node = active[-1].child(name=caption, type='implicit', elem=section_tag, hlvl=name_lvl)
 				active.append(node)
 				for sib in tuple(section_tag.next_siblings):
 					setattr(sib, '_move_me', True)
 			elem.name = 'h{0:d}'.format(lvl)
-		elif name in section_tags:
-			is_first = True
 		if getattr(elem, '_move_me', False):
 			active[-1].elem.append(elem)
+		if name in section_tags:
+			print('\n\n\n', soup.prettify())
+			parent_lvl = active[-1].hlvl
+			active.pop()
+			elem.attrs['section-depth'] = len(active)
+			node = active[-1].child(name=None, type=name, elem=elem, hlvl=parent_lvl)
+			active.append(node)
+			is_first = True
+			# for sib in tuple(elem.next_siblings):
+			# setattr(elem, '_move_me', False)
 	return active[0]
 
 
@@ -151,20 +177,15 @@ def find_sections(sub_soup, level=0):
 	return SectionNode(name=name, type=sub_soup.name, children=sub_sections)
 
 
-# def get_outline(soup):
-# 	return find_sections(soup)
-
-
-with open('tests/implicit02.html', 'r') as fh:
+with open('tests/annoying01.html', 'r') as fh:
 	html = fh.read()
 
 
 soup = BeautifulSoup(html, 'lxml')
-# print(soup.prettify())
 
-# print(dumps(get_outline(soup), indent=2))
-print(readygo(soup).str())
+toc = readygo(soup)
 print(soup.body.prettify())
+print('** ToC **')
+print(toc.str())
 
 
-# print(soup)
