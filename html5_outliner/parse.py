@@ -12,14 +12,16 @@ skip_tags = {None, 'head', 'header', 'footer', 'address', 'blockquote', 'details
 
 class SectionNode:
 	#todo: header, footer?
-	def __init__(self, name, type, elem):
+	def __init__(self, name, type, elem, lvl=0, offset=0):
 		self.name = name
 		self.type = type
 		self.elem = elem
 		self.children = []
+		self.lvl = lvl
+		self.offset = offset
 
-	def child(self, name, type, elem):
-		child = SectionNode(name=name, type=type, elem=elem)
+	def child(self, name, type, elem, lvl, offset):
+		child = SectionNode(name=name, type=type, elem=elem, lvl=lvl, offset=offset)
 		self.children.append(child)
 		return child
 
@@ -77,7 +79,13 @@ def readygo(soup):
 		if name in heading_tags:
 			# print('offset =', offset, 'for', elem.text)
 			# lvl = int(elem.name[-1])
-			lvl = min(int(elem.name[-1]), len(active) + 1)
+			# node._offset, node._lvl
+			name_lvl, max_lvl = int(elem.name[-1]), len(active)
+			lvl = min(name_lvl, max_lvl)
+			print('found caption', elem.name, ':', elem.text, lvl, len(active))
+			if lvl >= active[-1].lvl:
+				lvl += active[-1].offset
+				print('  LVL SHIFT to', lvl)
 			if is_first:
 				# active[-1] = elem.text.strip()
 				is_first = False
@@ -86,7 +94,6 @@ def readygo(soup):
 				# if lvl > active[-1].elem_lvl() + 1:
 					# print('UPDATING HEADER')
 					# shift_min, shift_min =
-				print('found caption', elem.name, ':', elem.text, lvl, len(active))
 				""" Found a heading that doesn't belong to an explicit section; start one. """
 				for up_step in range(0, len(active) - lvl):
 					""" Shallower or equal nesting: close the current section. """
@@ -95,11 +102,14 @@ def readygo(soup):
 				if getattr(elem, '_move_me', False) and len(active) > 1:
 					active[-1].elem.append(elem)
 				""" Start a new section. """
-				print('creating section for', elem.text, lvl, len(active))
+				print(' creating section for', elem.text, lvl, len(active))
 				section_tag = elem.wrap(BeautifulSoup.new_tag(elem, 'section',
 					**{'class': 'implicit-section', 'section-depth': len(active)}))
 				# node = SectionNode(name=elem.text.strip(), type='implicit', elem=section_tag)
-				node = active[-1].child(name=elem.text.strip(), type='implicit', elem=section_tag)
+				node = active[-1].child(name=elem.text.strip(), type='implicit', elem=section_tag,
+					lvl=lvl, offset=lvl-name_lvl)
+				print('  offset =', lvl-name_lvl, 'lvl', lvl)
+				# print(name_lvl, max_lvl, lvl, lvl - name_lvl)
 				active.append(node)
 				# print('\n\n\n' + str(active) + '\n' + str(soup.prettify()) + '\n\n\n')
 				for sib in tuple(section_tag.next_siblings):
